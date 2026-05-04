@@ -1,52 +1,58 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const contactRouter = require('./routes/contact');
+const nodemailer = require('nodemailer');
+
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ── Security middleware ──────────────────────────────────────
-app.use(helmet());
-app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type']
-}));
-
-// ── Rate limiting ────────────────────────────────────────────
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
-  message: { success: false, message: 'Too many requests. Please try again later.' }
-});
-
-// ── Body parsing ─────────────────────────────────────────────
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true }));
-
-// ── Routes ───────────────────────────────────────────────────
-app.use('/api/contact', limiter, contactRouter);
+app.use(cors());
+app.use(express.json());
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Prottush Portfolio API is running 🚀' });
+  res.json({ status: 'OK', message: 'Portfolio API is running!' });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ success: false, message: 'Route not found' });
+app.post('/api/contact', async (req, res) => {
+  const { name, email, subject, message } = req.body;
+
+  if (!name || !email || !subject || !message) {
+    return res.status(400).json({ success: false, message: 'All fields are required.' });
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+
+  const mailToOwner = {
+    from: process.env.EMAIL_USER,
+    to: process.env.EMAIL_USER,
+    subject: '[Portfolio] ' + subject,
+    html: '<h3>New message from ' + name + '</h3><p><b>Email:</b> ' + email + '</p><p><b>Message:</b> ' + message + '</p>'
+  };
+
+  const mailToSender = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Got your message, ' + name + '!',
+    html: '<h3>Hey ' + name + '!</h3><p>Thanks for reaching out. I will reply within 24-48 hours.</p><p><b>Your message:</b> ' + message + '</p><br><p>Prottush Islam</p>'
+  };
+
+  try {
+    await transporter.sendMail(mailToOwner);
+    await transporter.sendMail(mailToSender);
+    res.json({ success: true, message: 'Message sent successfully!' });
+  } catch (error) {
+    console.error('Email error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to send email.' });
+  }
 });
 
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('Server Error:', err.message);
-  res.status(500).json({ success: false, message: 'Internal server error' });
-});
-
-// ── Start ────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-  console.log(`📧 Email service: ${process.env.EMAIL_USER || 'Not configured'}`);
+  console.log('Server running on port ' + PORT);
 });
